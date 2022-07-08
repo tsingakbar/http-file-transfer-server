@@ -1,0 +1,12 @@
+{
+  "name": "http-file-transfer-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "formidable": "2.0.1",
+    "mustache": "4.2.0"
+  }
+}

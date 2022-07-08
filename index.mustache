@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name=viewport content="width=device-width, initial-scale=1.0" />
+  <title>HTTP File Transfer Server</title>
+  <style>
+  {{{data.simpleResponsiveCSS}}}
+  </style>
+  <style>
+    .td_left { text-align: left; }
+    .td_right { text-align: right; }
+    td { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+    table { border-collapse: collapse; }
+    tr th { border-bottom: 2px groove; }
+  </style>
+
+  <script type="text/javascript">
+    function humanFileSize(size) {
+      if (size == 0) { return '0B'; }
+      const i = Math.floor(Math.log(size) / Math.log(1024));
+      return (size / Math.pow(1024, i)).toFixed(2) * 1 + ' ' + ['B', 'KiB', 'MiB', 'GiB', 'TiB'][i];
+    };
+
+    function fileSelected() {
+      var file = document.getElementById('fileToUpload').files[0];
+      if (file) {
+        document.getElementById('fileName').innerHTML = file.name;
+        document.getElementById('fileSize').innerHTML = humanFileSize(file.size);
+        document.getElementById('fileType').innerHTML = file.type;
+      }
+    }
+
+    function uploadFile() {
+      var fd = new FormData();
+      fd.append('up', document.getElementById('fileToUpload').files[0]);
+      var xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener("progress", uploadProgress.bind({
+        'prevSpeed': '0B/s',
+        'prevStamp': Date.now(),
+        'prevLoaded': 0,
+      }), false);
+      xhr.addEventListener("load", uploadComplete, false);
+      xhr.addEventListener("error", uploadFailed, false);
+      xhr.addEventListener("abort", uploadCanceled, false);
+      xhr.open("POST", window.location.pathname);
+      xhr.send(fd);
+      document.getElementById('uploadButton').setAttribute('disabled', true);
+    }
+
+    function uploadProgress(evt) {
+      if (evt.lengthComputable) {
+        var stampNowMS = Date.now();
+        if (stampNowMS - this.prevStamp > 1000) {
+          var loadedInc = evt.loaded - this.prevLoaded;
+          this.prevSpeed = humanFileSize(loadedInc / ((stampNowMS - this.prevStamp)/1000)) + '/s';
+          this.prevStamp = stampNowMS;
+          this.prevLoaded = evt.loaded;
+        }
+        document.getElementById('progressNumber').innerHTML = 
+          Math.round(evt.loaded * 100 / evt.total).toString() + '% ' + this.prevSpeed;
+      } else {
+        document.getElementById('progressNumber').innerHTML = 'unable to compute';
+      }
+    }
+
+    function uploadComplete(evt) {
+      /* This event is raised when the server send back a response */
+      alert(evt.target.responseText);
+      document.getElementById('uploadButton').removeAttribute('disabled');
+    }
+
+    function uploadFailed(evt) {
+      alert("There was an error attempting to upload the file.");
+      document.getElementById('uploadButton').removeAttribute('disabled');
+    }
+
+    function uploadCanceled(evt) {
+      alert("The upload has been canceled by the user or the browser dropped the connection.");
+      document.getElementById('uploadButton').removeAttribute('disabled');
+    }
+  </script>
+</head>
+
+<body>
+  <h1>{{data.title}}</h2>
+  <form>
+    <div>
+      <label for="fileToUpload">File to Upload</label>
+      <div>
+        <input id="fileToUpload" type="file" name="fileToUpload" onchange="javascript:fileSelected();" />
+      </div>
+    </div>
+    <div>
+      <label>Name</label>
+      <div><span id="fileName"></span></div>
+    </div>
+    <div>
+      <label>Size</label>
+      <div><span id="fileSize"></span></div>
+    </div>
+    <div>
+      <label>Type</label>
+      <div><span id="fileType"></span></div>
+    </div>
+    <div>
+      <div>
+        <input id="uploadButton" type="button" onclick="javascript:uploadFile()" value="Upload" />
+      </div>
+    </div>
+    <div>
+      <label>Progress</label>
+      <div><span id="progressNumber"></span></div>
+    </div>
+  </form>
+  <table width="100%">
+    <thead><tr><th class="td_left">Name</th><th class="td_left">MTime</th><th class="td_right">Size</th><th class="td_right">Size</th></tr></thead>
+    <tbody>
+      {{#data.fileList}}
+      <tr><td><a href="{{{href}}}">{{name}}</a></td><td>{{mtime}}</td><td class="td_right">{{sizeHumanReadable}}</td><td class="td_right">{{size}}</td></tr>
+      {{/data.fileList}}
+    </tbody>
+  </table>
+</body>
+
+</html>
