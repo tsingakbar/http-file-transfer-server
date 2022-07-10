@@ -16,6 +16,35 @@ function humanFileSize(size) {
     return (size / Math.pow(1024, i)).toFixed(2) * 1 + ' ' + ['B', 'KiB', 'MiB', 'GiB', 'TiB'][i];
 };
 
+function parseHttpReqRange(rangeLine, fileSize) {
+    // if multiple ranges requested, we only support the first range
+    let [, rangeStart, rangeEnd] = rangeLine.trim().match(/bytes=(\d+)?-(\d+)?/);
+    rangeStart = parseInt(rangeStart);
+    rangeEnd = parseInt(rangeEnd);
+    if (isNaN(rangeStart)) {
+        if (isNaN(rangeEnd)) {
+            return [NaN, NaN];
+        }
+        // something like Range: -500
+        if (rangeEnd >= fileSize) {
+            return [NaN, NaN];
+        }
+        return [fileSize - rangeEnd, fileSize - 1];
+    }
+    if (rangeStart >= fileSize) {
+        return [NaN, NaN];
+    }
+    if (isNaN(rangeEnd)) {
+        // something like Range: 999-
+        return [rangeStart, fileSize - 1];
+    }
+    // something like Range:600-700
+    if (rangeEnd >= fileSize) {
+        return [NaN, NaN];
+    }
+    return [rangeStart, rangeEnd];
+}
+
 function mkStatPromise(dirPath, fileName) {
     return new Promise((resolve) => {
         const fileRelePath = path.join(dirPath, fileName);
@@ -90,14 +119,32 @@ http.createServer(async function (req, rsp) {
             rsp.writeHead(200, { 'Content-Type': "text/html; charset=UTF-8" });
             rsp.end(index_html, 'utf-8');
         } else if (fileStat.isFile()) {
-            const fileStream = fs.createReadStream(fileRelPath);
-            rsp.writeHead(200, {
-                'Content-Type': 'application/octet-stream',
-                'Content-Length': fileStat.size,
-            });
-            console.info(`download: streaming ${fileRelPath} to downloader...`);
-            // rsp.end() will be called when fileStream emits "end" event
+            let fileStream = null;
+            if (req.headers.range) {
+                const [rangeStart, rangeEnd] = parseHttpReqRange(req.headers.range, fileStat.size);
+                if (isNaN(rangeStart)) {
+                    rsp.writeHead(416, { 'Content-Type': "text/plain; charset=UTF-8" });
+                    rsp.end("Range Not Satisfiable");
+                    return;
+                }
+                fileStream = fs.createReadStream(fileRelPath, { start: rangeStart, end: rangeEnd });
+                rsp.writeHead(206, {
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${fileStat.size}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': `${rangeEnd - rangeStart + 1}`,
+                });
+                console.info(`download: streaming ${fileRelPath} range ${rangeStart}-${rangeEnd} to downloader...`);
+            } else {
+                fileStream = fs.createReadStream(fileRelPath);
+                rsp.writeHead(200, {
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Length': fileStat.size,
+                });
+                console.info(`download: streaming ${fileRelPath} to downloader...`);
+            }
             fileStream.pipe(rsp);
+            // rsp.end() will be called when fileStream emits "end" event
             fileStream.on('error', (err) => {
                 console.error(`download: error occurs during piping ${fileRelPath} to http response: ${err.message}`);
                 fileStream.close();
