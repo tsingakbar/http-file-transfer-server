@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 var formidable = require('formidable'),
     mustache = require('mustache'),
     http = require('http'),
@@ -167,7 +168,7 @@ http.createServer(async function (req, rsp) {
         }
         let form = new formidable.IncomingForm({
             'keepExtensions ': true,
-            'maxFileSize': 10 * 1024 * 1024 * 1024
+            'maxFileSize': 100 * 1024 * 1024 * 1024
         });
         form.encoding = 'utf-8';
         form.uploadDir = fileRelPath;
