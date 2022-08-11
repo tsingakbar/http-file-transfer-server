@@ -71,15 +71,15 @@ function mkStatPromise(dirPath, fileName) {
 
 console.log(`starting http server at ${BIND_IP}:${BIND_PORT}...`);
 http.createServer(async function (req, rsp) {
-    // possible values(tailing slash is not always carried): '/', '/foo', '/foo/', '/bar.txt'
     let decodedUrlPath = decodeURI((new URL(req.url, 'scheme://host')).pathname);
+    // now: decodedUrlPath possible values(tailing slash is not always carried): '/', '/foo', '/foo/', '/bar.txt'
     if (decodedUrlPath.endsWith('/')) {
-        // make sure there is no trailing slash, like: '', '/foo', '/bar.txt'
+        // make sure there is no trailing slash, resulting like: '', '/foo', '/bar.txt'
         decodedUrlPath = decodedUrlPath.substring(0, decodedUrlPath.length - 1);
     }
-    // possible values: '.', 'foo', 'bar.txt'
     const fileRelPath = path.normalize(path.join('.', decodedUrlPath));
-    // possible values(tailing slash is never carried): '/cwd', '/cwd/foo', '/cwd/bar.txt'
+    // now: fileRelPath possible values: '.', 'foo', 'bar.txt'
+    // path.resolve(fileRelPath) possible values(tailing slash is never carried): '/cwd', '/cwd/foo', '/cwd/bar.txt'
     if (path.resolve(fileRelPath) != path.join(path.resolve(process.cwd()), decodedUrlPath)) {
         rsp.writeHead(403, { 'Content-Type': "text/plain; charset=UTF-8" });
         rsp.end("Not allowed to break the jail");
@@ -171,7 +171,8 @@ http.createServer(async function (req, rsp) {
             'maxFileSize': 100 * 1024 * 1024 * 1024
         });
         form.encoding = 'utf-8';
-        form.uploadDir = fileRelPath;
+        // use resolved path as uploadDir, otherwise '.' will accidently trigger formidable's attack detection
+        form.uploadDir = path.resolve(fileRelPath);
         console.log(`upload: ${fileRelPath}/ receiving a new upload...`);
         const [err, upfile] = await new Promise((resolve) => {
             form.parse(req, function (err, fields, upfile) {
