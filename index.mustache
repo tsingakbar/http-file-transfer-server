@@ -80,6 +80,27 @@
       alert("The upload has been canceled by the user or the browser dropped the connection.");
       document.getElementById('uploadButton').removeAttribute('disabled');
     }
+
+    function tailF(path) {
+      if (!("WebSocket" in window)) {
+        alert("This requires browser's websocket support.");
+        return;
+      }
+      var ws = new WebSocket("ws://" + location.host + path);
+      ws.onopen = function() {
+         // Web Socket is connected, send data using send()
+         //ws.send("Message to send");
+      };
+ 
+      ws.onmessage = function (evt) { 
+         var received_msg = evt.data;
+         console.log(evt.data);
+      };
+ 
+      ws.onclose = function() { 
+         console.log("Connection is closed..."); 
+      };
+    }
   </script>
 </head>
 
@@ -106,7 +127,7 @@
     </div>
     <div>
       <div>
-        <input id="uploadButton" type="button" onclick="javascript:uploadFile()" value="Upload" />
+        <input id="uploadButton" type="button" onclick="javascript:uploadFile();" value="Upload" />
       </div>
     </div>
     <div>
@@ -115,10 +136,16 @@
     </div>
   </form>
   <table width="100%">
-    <thead><tr><th class="td_left">Name</th><th class="td_left">MTime</th><th class="td_right">Size</th><th class="td_right">Size</th></tr></thead>
+    <thead><tr><th class="td_left">Name</th><th></th></th><th class="td_left">MTime</th><th class="td_right">Size</th><th class="td_right">Size</th></tr></thead>
     <tbody>
       {{#data.fileList}}
-      <tr><td><a href="{{{href}}}">{{name}}</a></td><td>{{mtime}}</td><td class="td_right">{{sizeHumanReadable}}</td><td class="td_right">{{size}}</td></tr>
+      <tr>
+        <td><a href="{{{href}}}">{{name}}</a></td>
+        <td>{{#hrefStringified}}<a href='javascript:tailF({{{hrefStringified}}});'>tail -f</a>{{/hrefStringified}}</td>
+        <td>{{mtime}}</td>
+        <td class="td_right">{{sizeHumanReadable}}</td>
+        <td class="td_right">{{size}}</td>
+      </tr>
       {{/data.fileList}}
     </tbody>
   </table>
