@@ -5,12 +5,12 @@ var formidable = require('formidable'),
     fs = require('fs'),
     process = require('process'),
     path = require('path');
-const { stdout } = require('process');
 
 const BIND_IP = '0.0.0.0';
 const BIND_PORT = 8080;
 const INDEX_HTML_TPL = fs.readFileSync(`${__dirname}/index.mustache`).toString();
 const SIMPLE_RESPONSIVE_CSS = fs.readFileSync(`${__dirname}/simpleresponsive.css`).toString();
+const TAIL_F_HTML_TPL = fs.readFileSync(`${__dirname}/tail_f.mustache`).toString();
 
 function humanFileSize(size) {
     if (size == 0) { return '0B'; }
@@ -62,7 +62,7 @@ function mkStatPromise(dirPath, fileName) {
                 resolve({
                     'name': fileName,
                     'href': href,
-                    'hrefStringified': (stat.isFile() ? JSON.stringify(href) : null),
+                    'tailFAvail' : stat.isFile(),
                     'mtime': stat.mtime.toLocaleString('sv', { timeZoneName: 'short' }),
                     'size': stat.size,
                     'sizeHumanReadable': humanFileSize(stat.size),
@@ -73,42 +73,46 @@ function mkStatPromise(dirPath, fileName) {
 }
 
 async function parseUriToFileStat(uri) {
-    let decodedUrlPath = decodeURI((new URL(uri, 'scheme://host')).pathname);
+    const file = {};
+    uri = new URL(uri, 'scheme://host');
+    file.decodedUrlPath = decodeURI(uri.pathname);
+    file.isTailFPage = (uri.searchParams.has("tail_f"));
     // now: decodedUrlPath possible values(tailing slash is not always carried): '/', '/foo', '/foo/', '/bar.txt'
-    if (decodedUrlPath.endsWith('/')) {
+    if (file.decodedUrlPath.endsWith('/')) {
         // make sure there is no trailing slash, resulting like: '', '/foo', '/bar.txt'
-        decodedUrlPath = decodedUrlPath.substring(0, decodedUrlPath.length - 1);
+        file.decodedUrlPath = file.decodedUrlPath.substring(0, file.decodedUrlPath.length - 1);
     }
-    const fileRelPath = path.normalize(path.join('.', decodedUrlPath));
-    // now: fileRelPath possible values: '.', 'foo', 'bar.txt'
-    // path.resolve(fileRelPath) possible values(tailing slash is never carried): '/cwd', '/cwd/foo', '/cwd/bar.txt'
-    if (path.resolve(fileRelPath) != path.join(path.resolve(process.cwd()), decodedUrlPath)) {
-        return [null, null, null, {
+    file.relPath = path.normalize(path.join('.', file.decodedUrlPath));
+    // now: file.relPath possible values: '.', 'foo', 'bar.txt'
+    // path.resolve(file.relPath) possible values(tailing slash is never carried): '/cwd', '/cwd/foo', '/cwd/bar.txt'
+    if (path.resolve(file.relPath) != path.join(path.resolve(process.cwd()), file.decodedUrlPath)) {
+        return [null, {
             code: 403,
             header: { 'Content-Type': "text/plain; charset=UTF-8" },
             message: "Not allowed to break the jail",
         }];
     }
     let [err, fileStat] = await new Promise((resolve) => {
-        fs.stat(fileRelPath, (err, stat) => { resolve([err, stat]); });
+        fs.stat(file.relPath, (err, stat) => { resolve([err, stat]); });
     });
+    file.stat = fileStat;
     if (err == null) {
-        err = await new Promise((resolve) => fs.access(fileRelPath, fs.R_OK, (err) => { resolve(err); }));
+        err = await new Promise((resolve) => fs.access(file.relPath, fs.R_OK, (err) => { resolve(err); }));
     }
     if (err) {
-        return [null, null, null, {
+        return [null, {
             code: 404,
             header: { 'Content-Type': "text/plain; charset=UTF-8" },
             message: err.message,
         }];
     }
-    return [fileStat, fileRelPath, decodedUrlPath, null];
+    return [file, null];
 }
 
 const httpServer = http.createServer();
 
 httpServer.on('request', async function (req, rsp) {
-    const [fileStat, fileRelPath, decodedUrlPath, errRsp] = await parseUriToFileStat(req.url);
+    const [file, errRsp] = await parseUriToFileStat(req.url);
     if (errRsp) {
         rsp.writeHead(errRsp.code, errRsp.header);
         rsp.end(errRsp.message);
@@ -117,9 +121,9 @@ httpServer.on('request', async function (req, rsp) {
 
     if (req.method.toLowerCase() == 'get') {
         // "GET" is used for directory listing and file downloading
-        if (fileStat.isDirectory()) {
+        if (file.stat.isDirectory()) {
             const [err, subFileNameList] = await new Promise((resolve) => {
-                fs.readdir(fileRelPath, (err, list) => { resolve([err, list]); });
+                fs.readdir(file.relPath, (err, list) => { resolve([err, list]); });
             });
             if (err) {
                 rsp.writeHead(404, { 'Content-Type': "text/plain; charset=UTF-8" });
@@ -128,63 +132,73 @@ httpServer.on('request', async function (req, rsp) {
             }
             let stat_promises = [];
             for (const subFileName of subFileNameList) {
-                stat_promises.push(mkStatPromise(fileRelPath, subFileName));
+                stat_promises.push(mkStatPromise(file.relPath, subFileName));
             }
             const subFileStats = await Promise.all(stat_promises);
             const index_html = mustache.render(INDEX_HTML_TPL, {
                 'data': {
                     'simpleResponsiveCSS': SIMPLE_RESPONSIVE_CSS,
-                    'title': decodedUrlPath + '/',
+                    'title': file.decodedUrlPath + '/',
                     'fileList': subFileStats,
                 }
             });
             rsp.writeHead(200, { 'Content-Type': "text/html; charset=UTF-8" });
             rsp.end(index_html, 'utf-8');
-        } else if (fileStat.isFile()) {
+        } else if (file.stat.isFile()) {
+            if (file.isTailFPage) {
+                rsp.writeHead(200, { 'Content-Type': "text/html; charset=UTF-8" });
+                rsp.end(mustache.render(TAIL_F_HTML_TPL, {
+                    "data": {
+                        'title': file.decodedUrlPath,
+                        'pathWebsocket': JSON.stringify(encodeURI(path.join('/', file.relPath))),
+                    }
+                }), 'utf-8');
+                return;
+            }
             let fileStream = null;
             if (req.headers.range) {
-                const [rangeStart, rangeEnd] = parseHttpReqRange(req.headers.range, fileStat.size);
+                const [rangeStart, rangeEnd] = parseHttpReqRange(req.headers.range, file.stat.size);
                 if (isNaN(rangeStart)) {
                     rsp.writeHead(416, { 'Content-Type': "text/plain; charset=UTF-8" });
                     rsp.end("Range Not Satisfiable");
                     return;
                 }
-                fileStream = fs.createReadStream(fileRelPath, { start: rangeStart, end: rangeEnd });
+                fileStream = fs.createReadStream(file.relPath, { start: rangeStart, end: rangeEnd });
                 rsp.writeHead(206, {
                     'Content-Type': 'application/octet-stream',
-                    'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${fileStat.size}`,
+                    'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${file.stat.size}`,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': `${rangeEnd - rangeStart + 1}`,
                 });
-                console.info(`download: streaming ${fileRelPath} range ${rangeStart}-${rangeEnd} to downloader...`);
+                console.info(`download: streaming ${file.relPath} range ${rangeStart}-${rangeEnd} to downloader...`);
             } else {
-                fileStream = fs.createReadStream(fileRelPath);
+                fileStream = fs.createReadStream(file.relPath);
                 rsp.writeHead(200, {
                     'Content-Type': 'application/octet-stream',
-                    'Content-Length': fileStat.size,
+                    'Content-Length': file.stat.size,
                 });
-                console.info(`download: streaming ${fileRelPath} to downloader...`);
+                console.info(`download: streaming ${file.relPath} to downloader...`);
             }
             fileStream.pipe(rsp);
             // rsp.end() will be called when fileStream emits "end" event
             fileStream.on('error', (err) => {
-                console.error(`download: error occurs during piping ${fileRelPath} to http response: ${err.message}`);
+                console.error(`download: error occurs during piping ${file.relPath} to http response: ${err.message}`);
                 fileStream.close();
                 rsp.end();
             });
             fileStream.on('close', () => {
-                console.info(`download: streaming ${fileRelPath} to downloader finished`);
+                console.info(`download: streaming ${file.relPath} to downloader finished`);
             });
         } else {
             rsp.writeHead(403, { 'Content-Type': "text/plain; charset=UTF-8" });
-            rsp.end(`${fileRelPath} is neither directory nor regular file.`);
+            rsp.end(`${file.relPath} is neither directory nor regular file.`);
             return;
         }
     } else if (req.method.toLowerCase() == "post") {
         // "POST" is used for file uploading
-        if (!fileStat.isDirectory()) {
+        if (!file.stat.isDirectory()) {
             rsp.writeHead(403, { 'Content-Type': "text/plain; charset=UTF-8" });
-            rsp.end(`File can only be uploaded to a directory, but ${fileRelPath} is not.`);
+            rsp.end(`File can only be uploaded to a directory, but ${file.relPath} is not.`);
             return;
         }
         let form = new formidable.IncomingForm({
@@ -193,21 +207,21 @@ httpServer.on('request', async function (req, rsp) {
         });
         form.encoding = 'utf-8';
         // use resolved path as uploadDir, otherwise '.' will accidently trigger formidable's attack detection
-        form.uploadDir = path.resolve(fileRelPath);
-        console.log(`upload: ${fileRelPath}/ receiving a new upload...`);
+        form.uploadDir = path.resolve(file.relPath);
+        console.log(`upload: ${file.relPath}/ receiving a new upload...`);
         const [err, upfile] = await new Promise((resolve) => {
             form.parse(req, function (err, fields, upfile) {
                 resolve([err, upfile]);
             });
         });
         if (err) {
-            console.error(`upload: ${fileRelPath}/ failed: ${err.message}`);
+            console.error(`upload: ${file.relPath}/ failed: ${err.message}`);
             rsp.writeHead(500, { 'content-type': 'text/plain; charset=UTF-8' });
             rsp.end(err.message);
             return;
         }
         // rename file back to original name
-        const upfileTargetPath = path.normalize(path.join(fileRelPath, upfile.up.originalFilename));
+        const upfileTargetPath = path.normalize(path.join(file.relPath, upfile.up.originalFilename));
         if (path.dirname(path.resolve(upfile.up.filepath)) != path.dirname(path.resolve(upfileTargetPath))) {
             rsp.writeHead(403, { 'Content-Type': "text/plain; charset=UTF-8" });
             rsp.end("Not allowed to break the jail");
@@ -233,8 +247,8 @@ httpServer.on('upgrade', async function (req, socket) {
         socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
         return;
     }
-    const [fileStat, fileRelPath, decodedUrlPath, errRsp] = await parseUriToFileStat(req.url);
-    if (errRsp || !fileStat.isFile()) {
+    const [file, errRsp] = await parseUriToFileStat(req.url);
+    if (errRsp || !file.stat.isFile()) {
         socket.end(`HTTP/1.1 403 Forbidden\r\n\r\n`);
         return;
     }
@@ -251,16 +265,16 @@ httpServer.on('upgrade', async function (req, socket) {
         "\r\n");
 
     // websocket is ready, now wrap file updating data into websocket frames to send to client.
-    const tail = require('child_process').spawn("tail", ["-f", fileRelPath]);
-    console.log(`launch tail -f ${fileRelPath} process ${tail.pid} for websocket connection`);
+    const tail = require('child_process').spawn("tail", ["-f", file.relPath]);
+    console.log(`launch tail -f ${file.relPath} process ${tail.pid} for websocket connection`);
     tail.on('error', () => {
-        console.log(`close websocket for tail -f ${fileRelPath} process ${tail.pid} failed to spawn`);
+        console.log(`close websocket for tail -f ${file.relPath} process ${tail.pid} failed to spawn`);
         socket.end();
     });
     tail.on('exit', () => {
         tail.exited = true;
         if (!socket.destroyed) {
-            console.log(`close websocket for lost tail -f ${fileRelPath} process ${tail.pid}`);
+            console.log(`close websocket for lost tail -f ${file.relPath} process ${tail.pid}`);
             socket.end();
         }
     });
@@ -271,7 +285,7 @@ httpServer.on('upgrade', async function (req, socket) {
     socket.on('end', () => {
         socket.destroy();
         if (!tail.exited) {
-            console.log(`kill tail -f ${fileRelPath} process ${tail.pid} for closed websocket`);
+            console.log(`kill tail -f ${file.relPath} process ${tail.pid} for closed websocket`);
             tail.kill();
         }
     });

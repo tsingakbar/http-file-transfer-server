@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name=viewport content="width=device-width, initial-scale=1.0" />
   <title>HTTP File Transfer Server</title>
+  <link rel="icon" href="data:,"><!-- hint there's no favicon -->
   <style>
   {{{data.simpleResponsiveCSS}}}
   </style>
@@ -80,27 +81,6 @@
       alert("The upload has been canceled by the user or the browser dropped the connection.");
       document.getElementById('uploadButton').removeAttribute('disabled');
     }
-
-    function tailF(path) {
-      if (!("WebSocket" in window)) {
-        alert("This requires browser's websocket support.");
-        return;
-      }
-      var ws = new WebSocket("ws://" + location.host + path);
-      ws.onopen = function() {
-         // Web Socket is connected, send data using send()
-         //ws.send("Message to send");
-      };
- 
-      ws.onmessage = function (evt) { 
-         var received_msg = evt.data;
-         console.log(evt.data);
-      };
- 
-      ws.onclose = function() { 
-         console.log("Connection is closed..."); 
-      };
-    }
   </script>
 </head>
 
@@ -141,7 +121,7 @@
       {{#data.fileList}}
       <tr>
         <td><a href="{{{href}}}">{{name}}</a></td>
-        <td>{{#hrefStringified}}<a href='javascript:tailF({{{hrefStringified}}});'>tail -f</a>{{/hrefStringified}}</td>
+        <td>{{#tailFAvail}}<a href="{{{href}}}?tail_f=1">tail -f</a>{{/tailFAvail}}</td>
         <td>{{mtime}}</td>
         <td class="td_right">{{sizeHumanReadable}}</td>
         <td class="td_right">{{size}}</td>

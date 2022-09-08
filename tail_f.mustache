@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name=viewport content="width=device-width, initial-scale=1.0" />
+    <title>tail -f {{data.title}}</title>
+    <link rel="icon" href="data:,"><!-- hint there's no favicon -->
+    <style>
+        html { height: 100% }
+        body
+          { color: #1a2c37;
+            font-family: 'Helvetica', sans-serif; font-size: 86%;
+            height: 100%;
+            padding: 2em; }
+        #info
+          { font-size: 120%;
+            font-weight: bold; }
+        #tail
+          { border: 1px solid #ccc;
+            height: 80%;
+            padding: 0.5em;
+            overflow: hidden;
+            position: relative;
+            overflow-y: scroll; }
+    </style>
+    <script>
+        var displayLineCnt = 0;
+        var autoscroll = true;
+        function scrollSettingChanged(checkbox) {
+            autoscroll = checkbox.checked;
+        }
+        function tailF(path) {
+            var display = document.getElementById("tail");
+            console.log(display);
+            if (!("WebSocket" in window)) {
+                alert("This requires browser's websocket support.");
+                return;
+            }
+            var ws = new WebSocket("ws://" + location.host + {{{data.pathWebsocket}}});
+            ws.onopen = function () {
+                // Web Socket is connected, send data using send()
+                //ws.send("Message to send");
+            };
+
+            ws.onmessage = function (evt) {
+                var received_msg = evt.data;
+                console.log(evt.data);
+                display.innerHTML += "new data available with size " + evt.data.size;
+                displayLineCnt++;
+                if (autoscroll) {
+                    // https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop
+                    // the distance from the element's top to its topmost visible content
+                    display.scrollTop = displayLineCnt*100;
+                }
+            };
+
+            ws.onclose = function () {
+                display.innerHTML += "Connection is closed...";
+            };
+        }
+
+        function docReady(fn) {
+            if (document.readyState === "complete" || document.readyState === "interactive") {
+                setTimeout(fn, 1);
+            } else {
+                document.addEventListener("DOMContentLoaded", fn);
+            }
+        }
+        docReady(tailF);
+    </script>
+</head>
+
+<body>
+    <div class="info">
+    <form>
+        <input type="checkbox" id="autoscroll" checked="checked" onclick="scrollSettingChanged(this);" />auto scroll
+    </form>
+    </div>
+    <pre id="tail"></pre>
+</body>
