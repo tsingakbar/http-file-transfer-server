@@ -17,7 +17,7 @@
           { font-size: 120%;
             font-weight: bold; }
         #tail
-          { border: 1px solid #ccc;
+          { border: 1px solid red;
             height: 80%;
             padding: 0.5em;
             overflow: hidden;
@@ -25,7 +25,6 @@
             overflow-y: scroll; }
     </style>
     <script>
-        var displayLineCnt = 0;
         var autoscroll = true;
         function scrollSettingChanged(checkbox) {
             autoscroll = checkbox.checked;
@@ -39,24 +38,23 @@
             }
             var ws = new WebSocket("ws://" + location.host + {{{data.pathWebsocket}}});
             ws.onopen = function () {
-                // Web Socket is connected, send data using send()
-                //ws.send("Message to send");
+                display.style.border = "1px solid green";
             };
 
             ws.onmessage = function (evt) {
-                var received_msg = evt.data;
-                console.log(evt.data);
-                display.innerHTML += "new data available with size " + evt.data.size;
-                displayLineCnt++;
-                if (autoscroll) {
-                    // https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop
-                    // the distance from the element's top to its topmost visible content
-                    display.scrollTop = displayLineCnt*100;
-                }
+                evt.data.text().then(text => {
+                    display.innerText += text;
+                    if (autoscroll) {
+                        // https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop
+                        // the distance from the element's top to its topmost visible content
+                        display.scrollTop = display.scrollHeight;
+                    }
+                });
             };
 
             ws.onclose = function () {
-                display.innerHTML += "Connection is closed...";
+                display.style.border = "1px solid red";
+                display.innerHTML += '<strong style="color:red">Connection is closed...</strong>';
             };
         }
 
