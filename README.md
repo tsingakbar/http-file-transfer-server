@@ -1,7 +1,9 @@
 # HTTP File Transfer Server
 Handy tool to share files with your friends.
 
-With any recent web browser, you can download and upload files to this http server.
+With any recent web browser, you can:
+* download files from or upload files to this http server.
+* `tail -f <your.log>` in your browser.
 
 ![image](screenshot.jpg)
 
@@ -12,6 +14,7 @@ With any recent web browser, you can download and upload files to this http serv
 ## Backend Features
 * implemented with node.js 
 * native node.js to list directory and serve static file downloading
+* native node.js to upgrade http connection to websocket, and construct websocket frames
 * use `mustache` to render html to frontend
 * use `formidable` to process file uploading 
 
