@@ -220,6 +220,11 @@ httpServer.on('request', async function (req, rsp) {
             rsp.end(err.message);
             return;
         }
+        if (upfile.up === undefined) {
+            rsp.writeHead(403, { 'content-type': 'text/plain; charset=UTF-8' });
+            rsp.end("No file selected yet to be uploaded");
+            return;
+        }
         // rename file back to original name
         const upfileTargetPath = path.normalize(path.join(file.relPath, upfile.up.originalFilename));
         if (path.dirname(path.resolve(upfile.up.filepath)) != path.dirname(path.resolve(upfileTargetPath))) {

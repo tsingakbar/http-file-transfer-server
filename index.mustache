@@ -35,8 +35,13 @@
     }
 
     function uploadFile() {
+      var fileToUpload = document.getElementById('fileToUpload').files[0];
+      if (fileToUpload === undefined) {
+        alert("You need to first select the file to be uploaded");
+        return;
+      }
       var fd = new FormData();
-      fd.append('up', document.getElementById('fileToUpload').files[0]);
+      fd.append('up', fileToUpload);
       var xhr = new XMLHttpRequest();
       xhr.upload.addEventListener("progress", uploadProgress.bind({
         'prevSpeed': '0B/s',
