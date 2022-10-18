@@ -109,9 +109,23 @@ async function parseUriToFileStat(uri) {
     return [file, null];
 }
 
+function filterHandleDatestampReq(req, rsp) {
+    if (req.method.toLowerCase() != 'get') {
+        return false;
+    }
+    if (req.url != "/?stamp=now") {
+        return false;
+    }
+    rsp.writeHead(200, { 'Content-Type': "text/plain; charset=UTF-8" });
+    rsp.end((new Date).toISOString());
+    return true;
+}
+
 const httpServer = http.createServer();
 
 httpServer.on('request', async function (req, rsp) {
+    if (filterHandleDatestampReq(req, rsp)) return;
+
     const [file, errRsp] = await parseUriToFileStat(req.url);
     if (errRsp) {
         rsp.writeHead(errRsp.code, errRsp.header);
