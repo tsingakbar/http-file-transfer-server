@@ -6,7 +6,8 @@ var formidable = require('formidable'),
     process = require('process'),
     path = require('path');
 
-const BIND_IP = '0.0.0.0';
+//const BIND_IP = '0.0.0.0';
+const BIND_IP = '::';
 const BIND_PORT = 8080;
 const INDEX_HTML_TPL = fs.readFileSync(`${__dirname}/index.mustache`).toString();
 const SIMPLE_RESPONSIVE_CSS = fs.readFileSync(`${__dirname}/simpleresponsive.css`).toString();
