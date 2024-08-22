@@ -11,13 +11,8 @@ const BIND_IP = '::';
 const BIND_PORT = 8080;
 const INDEX_HTML_TPL = fs.readFileSync(`${__dirname}/index.mustache`).toString();
 const SIMPLE_RESPONSIVE_CSS = fs.readFileSync(`${__dirname}/simpleresponsive.css`).toString();
+const INDEX_JS = fs.readFileSync(`${__dirname}/index.js`).toString();
 const TAIL_F_HTML_TPL = fs.readFileSync(`${__dirname}/tail_f.mustache`).toString();
-
-function humanFileSize(size) {
-    if (size == 0) { return '0B'; }
-    const i = Math.floor(Math.log(size) / Math.log(1024));
-    return (size / Math.pow(1024, i)).toFixed(2) * 1 + ' ' + ['B', 'KiB', 'MiB', 'GiB', 'TiB'][i];
-};
 
 function parseHttpReqRange(rangeLine, fileSize) {
     // if multiple ranges requested, we only support the first range
@@ -66,7 +61,6 @@ function mkStatPromise(dirPath, fileName) {
                     'tailFAvail' : stat.isFile(),
                     'mtime': stat.mtime.toLocaleString('sv', { timeZoneName: 'short' }),
                     'size': stat.size,
-                    'sizeHumanReadable': humanFileSize(stat.size),
                 });
             }
         })
@@ -153,8 +147,9 @@ httpServer.on('request', async function (req, rsp) {
             const index_html = mustache.render(INDEX_HTML_TPL, {
                 'data': {
                     'simpleResponsiveCSS': SIMPLE_RESPONSIVE_CSS,
+                    'indexJS': INDEX_JS,
                     'title': file.decodedUrlPath + '/',
-                    'fileList': subFileStats,
+                    'stringifiedFileList': JSON.stringify(subFileStats),
                 }
             });
             rsp.writeHead(200, { 'Content-Type': "text/html; charset=UTF-8" });
