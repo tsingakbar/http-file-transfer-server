@@ -2,6 +2,7 @@
 Handy tool to share files with your friends.
 
 With any recent web browser, you can:
+* browser files, equipped with a size sorter.
 * download files from or upload files to this http server.
 * `tail -f <your.log>` in your browser.
 
