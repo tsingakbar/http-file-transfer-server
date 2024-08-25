@@ -72,12 +72,16 @@ function fillFileListTable(fileList) {
     tbFiles.innerHTML = "";
     for (fileInfo of fileList) {
         const tr = document.createElement("tr");
-        const hrefName = document.createElement("a");
-        var hrefTextName = document.createTextNode(fileInfo.name);
-        hrefName.appendChild(hrefTextName);
-        hrefName.href = fileInfo.href;
         const tdName = document.createElement("td");
-        tdName.appendChild(hrefName);
+        if (fileInfo.href) {
+            const hrefName = document.createElement("a");
+            var hrefTextName = document.createTextNode(fileInfo.name);
+            hrefName.appendChild(hrefTextName);
+            hrefName.href = fileInfo.href;
+            tdName.appendChild(hrefName);
+        } else {
+            tdName.textContent = fileInfo.name;
+        }
         tr.appendChild(tdName);
         const tdTailF = document.createElement("td");
         if (fileInfo.tailFAvail) {

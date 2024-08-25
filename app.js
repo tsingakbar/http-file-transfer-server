@@ -49,16 +49,19 @@ function mkStatPromise(dirPath, fileName) {
         fs.stat(fileRelPath, (err, stat) => {
             if (err != null) {
                 console.warn(`directory: stat(${fileRelPath}) failed: ${err.message}`);
-                resolve({ 'name': fileName });
+                resolve({
+                    'name': fileName,
+                    'size': 0,
+                });
             } else {
-                if (stat.isDirectory()) {
-                    fileName += '/';
-                }
                 const href = encodeURI(path.join('/', dirPath, fileName));
+                if (stat.isDirectory()) {
+                    fileName = `📁${fileName}/`;
+                }
                 resolve({
                     'name': fileName,
                     'href': href,
-                    'tailFAvail' : stat.isFile(),
+                    'tailFAvail' : stat.isFile() && fileName.toLowerCase().endsWith('.log'),
                     'mtime': stat.mtime.toLocaleString('sv', { timeZoneName: 'short' }),
                     'size': stat.size,
                 });
