@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "formidable": "^2.1.2",
-    "mustache": "4.2.0"
+    "mustache": "4.2.0",
+    "node-lmdb": "^0.10.1"
   }
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-var formidable = require('formidable'),
+const formidable = require('formidable'),
     mustache = require('mustache'),
+    lmdb = require('node-lmdb'),
     http = require('http'),
     fs = require('fs'),
     process = require('process'),
@@ -46,7 +47,7 @@ function parseHttpReqRange(rangeLine, fileSize) {
 function mkStatPromise(dirPath, fileName) {
     return new Promise((resolve) => {
         const fileRelPath = path.join(dirPath, fileName);
-        fs.stat(fileRelPath, (err, stat) => {
+        fs.lstat(fileRelPath, (err, stat) => {
             if (err != null) {
                 console.warn(`directory: stat(${fileRelPath}) failed: ${err.message}`);
                 resolve({
@@ -54,17 +55,30 @@ function mkStatPromise(dirPath, fileName) {
                     'size': 0,
                 });
             } else {
-                const href = encodeURI(path.join('/', dirPath, fileName));
-                if (stat.isDirectory()) {
-                    fileName = `📁${fileName}/`;
-                }
-                resolve({
+                const outStat = {
                     'name': fileName,
-                    'href': href,
-                    'tailFAvail' : stat.isFile() && fileName.toLowerCase().endsWith('.log'),
+                    'href': encodeURI(path.join('/', dirPath, fileName)),
                     'mtime': stat.mtime.toLocaleString('sv', { timeZoneName: 'short' }),
                     'size': stat.size,
-                });
+                }
+                if (stat.isDirectory()) {
+                    outStat.name = `📁${fileName}/`;
+                } else if (stat.isSymbolicLink()) {
+                    outStat.name = `↪${fileName}`;
+                }
+                const lowercaseName = fileName.toLowerCase();
+                if (lowercaseName.endsWith('.log') || lowercaseName.endsWith('.txt')) {
+                    outStat.extraHref = {
+                        text: "tail -f",
+                        link: `${outStat.href}?tail_f=1`,
+                    };
+                } else if (lowercaseName == "data.mdb") {
+                    outStat.extraHref = {
+                        text: "lmdb",
+                        link: `${encodeURI(path.join('/', dirPath))}?lmdb=1`,
+                    };
+                }
+                resolve(outStat);
             }
         })
     });
@@ -75,6 +89,7 @@ async function parseUriToFileStat(uri) {
     uri = new URL(uri, 'scheme://host');
     file.decodedUrlPath = decodeURI(uri.pathname);
     file.isTailFPage = (uri.searchParams.has("tail_f"));
+    file.isLmdbPage = (uri.searchParams.has("lmdb"));
     // now: decodedUrlPath possible values(tailing slash is not always carried): '/', '/foo', '/foo/', '/bar.txt'
     if (file.decodedUrlPath.endsWith('/')) {
         // make sure there is no trailing slash, resulting like: '', '/foo', '/bar.txt'
@@ -91,11 +106,16 @@ async function parseUriToFileStat(uri) {
         }];
     }
     let [err, fileStat] = await new Promise((resolve) => {
-        fs.stat(file.relPath, (err, stat) => { resolve([err, stat]); });
+        fs.lstat(file.relPath, (err, stat) => { resolve([err, stat]); });
     });
     file.stat = fileStat;
     if (err == null) {
-        err = await new Promise((resolve) => fs.access(file.relPath, fs.R_OK, (err) => { resolve(err); }));
+        if (file.stat.isSymbolicLink()) {
+            [err, file.linkStr] = await new Promise(
+                (resolve) => fs.readlink(file.relPath, (err, linkStr) => { resolve([err, linkStr]); }));
+        } else {
+            err = await new Promise((resolve) => fs.access(file.relPath, fs.R_OK, (err) => { resolve(err); }));
+        }
     }
     if (err) {
         return [null, {
@@ -119,6 +139,35 @@ function filterHandleDatestampReq(req, rsp) {
     return true;
 }
 
+function listLmdbKeys(dbPath) {
+    const outList = [];
+    try {
+        const env = new lmdb.Env();
+        env.open({
+            path: dbPath,
+            readOnly: true,
+        });
+        const dbi = env.openDbi({ name: null });
+        const txn = env.beginTxn({ readOnly: true });
+        const cursor = new lmdb.Cursor(txn, dbi, { keyIsBuffer: true });
+        let key = cursor.goToFirst();
+        while (key) {
+            outList.push({
+                'name': key.toString('utf8'),
+                'size': 0,
+            });
+            key = cursor.goToNext();
+        }
+        cursor.close();
+        txn.commit();
+        dbi.close();
+        env.close();
+    } catch (err) {
+        console.error(`listLmdbKeys(${dbPath}): ${err.message}`);
+    }
+    return outList;
+}
+
 const httpServer = http.createServer();
 
 httpServer.on('request', async function (req, rsp) {
@@ -134,6 +183,19 @@ httpServer.on('request', async function (req, rsp) {
     if (req.method.toLowerCase() == 'get') {
         // "GET" is used for directory listing and file downloading
         if (file.stat.isDirectory()) {
+            if (file.isLmdbPage) {
+                const index_html = mustache.render(INDEX_HTML_TPL, {
+                    'data': {
+                        'simpleResponsiveCSS': SIMPLE_RESPONSIVE_CSS,
+                        'indexJS': INDEX_JS,
+                        'title': `lmdb: ${file.decodedUrlPath}/`,
+                        'stringifiedFileList': JSON.stringify(listLmdbKeys(file.relPath)),
+                    }
+                });
+                rsp.writeHead(200, { 'Content-Type': "text/html; charset=UTF-8" });
+                rsp.end(index_html, 'utf-8');
+                return;
+            }
             const [err, subFileNameList] = await new Promise((resolve) => {
                 fs.readdir(file.relPath, (err, list) => { resolve([err, list]); });
             });
@@ -151,7 +213,8 @@ httpServer.on('request', async function (req, rsp) {
                 'data': {
                     'simpleResponsiveCSS': SIMPLE_RESPONSIVE_CSS,
                     'indexJS': INDEX_JS,
-                    'title': file.decodedUrlPath + '/',
+                    'upload': true,
+                    'title': `${file.decodedUrlPath}/`,
                     'stringifiedFileList': JSON.stringify(subFileStats),
                 }
             });
@@ -202,6 +265,9 @@ httpServer.on('request', async function (req, rsp) {
             fileStream.on('close', () => {
                 console.info(`download: streaming ${file.relPath} to downloader finished`);
             });
+        } else if (file.stat.isSymbolicLink()) {
+            rsp.writeHead(200, { 'Content-Type': "text/html; charset=UTF-8" });
+            rsp.end(file.linkStr, 'utf-8');
         } else {
             rsp.writeHead(403, { 'Content-Type': "text/plain; charset=UTF-8" });
             rsp.end(`${file.relPath} is neither directory nor regular file.`);

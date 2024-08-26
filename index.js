@@ -83,15 +83,16 @@ function fillFileListTable(fileList) {
             tdName.textContent = fileInfo.name;
         }
         tr.appendChild(tdName);
-        const tdTailF = document.createElement("td");
-        if (fileInfo.tailFAvail) {
-            const hrefTailF = document.createElement("a");
-            var hrefTextFailF = document.createTextNode("tail -f");
-            hrefTailF.appendChild(hrefTextFailF);
-            hrefTailF.href = `${fileInfo.href}?tail_f=1`;
-            tdTailF.appendChild(hrefTailF);
+        const tdExtra = document.createElement("td");
+        if (fileInfo.extraHref) {
+            const hrefExtra = document.createElement("a");
+            var hrefTextExtra = document.createTextNode(fileInfo.extraHref.text);
+            hrefExtra.appendChild(hrefTextExtra);
+            hrefExtra.href = fileInfo.extraHref.link;
+            tdExtra.appendChild(hrefExtra);
+        } else if (fileInfo.lmdbAvail) {
         }
-        tr.append(tdTailF);
+        tr.append(tdExtra);
         const tdMTime = document.createElement("td");
         tdMTime.textContent = fileInfo.mtime;
         tr.appendChild(tdMTime);
